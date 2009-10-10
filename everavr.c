@@ -105,14 +105,14 @@ get_hex(uint8_t *val){
  */
 
 #define CHAR_NOP     0x00
-#define CHAR_WRITE   0x01
-#define CHAR_ECHO    0x02
-#define CHAR_ADDR    0x03
-#define CHAR_STATUS  0x04
-#define CHAR_RESET   0x05
-#define CHAR_MODE    0x06
-#define CHAR_DISP    0x07
-#define CHAR_CURSOR  0x08
+#define CHAR_WRITE   0x01	// ^A
+#define CHAR_ECHO    0x02	// ^B
+#define CHAR_ADDR    0x03	// ^C
+#define CHAR_STATUS  0x04	// ^D
+#define CHAR_RESET   0x05	// ^E
+#define CHAR_MODE    0x06	// ^F
+#define CHAR_DISP    0x07	// ^G
+#define CHAR_CURSOR  0x08	// ^H
 
 uint8_t serport_data_1; /* memorize */
 uint8_t serport_data_2; /* memorize */

@@ -176,8 +176,9 @@ lcd_hardware_init(){
 	lcd_command_long(CMD_TEXT_AREA,40); /* 40 columns */
 	/* 40col x 8 line = 320 = 0x140 chars, roud up to 0x200 */
 	lcd_command_long(CMD_GRAPHIC_HOME_ADDR,0x140);
-	lcd_command_long(CMD_GRAPHIC_AREA,30); /* 240 pixels/8 bits_per_pixel */
-	/* 240x64px / 8bit = 1920 = 0x780 */
+	lcd_command_long(CMD_GRAPHIC_AREA,0x28);
+	/* 240 pixels/8 bits_per_pixel=30 byte/line */
+	/* 240x64px / 6bit = 2560 byte = 0xa00 */
 
 	/* *TEXT*
 	   0 : 0x0000 : start of first line
@@ -186,10 +187,10 @@ lcd_hardware_init(){
 	   7 : 0x0118 : start of 8th line  ... 0x013f end of 8th line
 
 	   *GRAPHICS*
-	    0 : 0x0140 : start of 1st line ... 0x015d end of 1st line
-	    1 : 0x015e : start of 2nd line ... 0x017b end of 3rd line
-	    2 : 0x017c : start of 3rd line ... 0x0199 end of 3rd line
-	   63 : 0x08a2 : start of 64th line ... 0x8bf end of 64th line
+		 0 0x0140 ..0x0167 line 1
+		 1 0x0168 ..0x018f line 2
+		 2 0x0190 ..0x01b7 line 3
+		63 0x0b18 ..0x0b3f line 64
 	*/
 
 	lcd_command_long(CMD_ADDRESS_POINTER,0x0000);
