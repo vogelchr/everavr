@@ -10,7 +10,7 @@
  * LCD \Res |6 D4    C0 23| LCD D0            D3 (14) (13) D2
  *          |7 Vcc  Vcc 22|                   D5 (16) (15) D4
  *          |8 GND Aref 21|                   D7 (18) (17) D6
- *  Xtal    |9 B6   GND 20|                    - (20) (19) - (FS?)
+ *  Xtal    |9 B6   GND 20|                    - (20) (19) FS (conn. to Vcc)
  *  Xtal    |10 B7   B5 19| SCK  Prg             (22) (21)
  *  LCD C/D |11 D5   B4 18| MISO Prg
  *  LCD D6  |12 D6   B3 17| MOSI Prd
@@ -18,10 +18,17 @@
  *  LCD \CS |14 B0   B1 15| LCD \WR
  *          +-------------+
  *
+ * On the Everbouquet LCD FS is "Font Select". This program here assumes
+ * a 6x8 font for which FS has to be connected to +5V (Vcc).
+ *
+ * Vee is the output of a DC/DC connector that is included on the LCD PCB.
+ * It usually outputs around -9V. Use a 50k - 200k potentiometer between
+ * Vee and Vcc, fee the center tap back to Vo to adjust the contrast.
+ *
  *               Mapping from LCD pins to AVR Ports (Bit7 ... Bit0)
  *          << 7>> << 6>> << 5>> << 4>> << 3>> << 2>> << 1>> << 0>>
  *         +------+------+------+------+------+------+------+------+
- *  PORTD  |  D7  |  D6  | C/\Ð | \Res |      |      |      |      |
+ *  PORTD  |  D7  |  D6  | C/\D | \Res |      |      |      |      |
  *         +------+------+------+------+------+------+------+------+
  *  PORTC  |      |      |  D5  |  D4  |  D3  |  D2  |  D1  |  D0  |
  *         +------+------+------+------+------+------+------+------+
@@ -70,6 +77,8 @@ print_hex(unsigned char x){
 	put_char(n);
 }
 
+/* get one hex character 0..9, a..f, A..F from serial port,
+   put result (0..15) in *nib, return 0 on success, 1 on error */
 int
 get_nibble(uint8_t *nib){
 	unsigned char x = get_char();
@@ -88,6 +97,8 @@ get_nibble(uint8_t *nib){
 	return 1;
 }
 
+/* get two characters (in hexadecimal) from serial port, put
+   result (0..255) in *val, return 0 if ok, return != 0 on error */
 int
 get_hex(uint8_t *val){
 	register int r;
@@ -147,6 +158,7 @@ enum serport_state {
 uint8_t global_serport_state;
 uint8_t global_serport_data; /* memorize stuff for serial protocol */
 
+/* state machine for our serial protocol. Eating one character at a time */
 static void
 eat_char(uint8_t c){
 	uint8_t serport_state = global_serport_state;

@@ -1,0 +1,28 @@
+
+So one day, I found a rather big Everbouquet MG24065G LCD in the dumpster,
+but besides some (rather bad) scratches on the front, the rest of it looked
+pristine... And indeed, after a few hours of tinkering, the thing works.
+
+To use this code, you have to do the following:
+
+ - build yourself a small PCB that connects the mega168 to the LCD;
+   the pinout is shown in the top comment of everavr.c.
+   I prefer ghetto perfboard style, as shown here
+	http://picasaweb.google.com/lh/photo/RSowHW28Nw-JTtaitvrUfQ?authkey=Gv1sRgCJn8-tj34pCoXA&feat=directlink
+
+ - Burn the AVR fuses so that it runs with 8 MHz (for other clock- and
+   baud-options, adjust UBRR0, U2X0, ..). Currently my schematic
+   has pins for a external XTAL and possible USB connection on pins 4,5
+   left unused.
+
+ - Connect your PC's serial port via a suitable level converter to
+   pins 2 & 3 of the AVR. I used a FT232R usb-to-serial board from
+   sparkfun electronics.
+
+ - Don't forget to provide the LCD with the correct LCD bias voltage
+   and adjust the contrast (pins Vcc, Vee, Vo on the LCD, see everavr.c).
+
+If you send any ASCII character at 115200 bps to the lcd, it should show
+up in the upper left corner. The serial protocol currently implemented is
+also explained in everavr.c (see the protocol state machine in eat_char).
+
