@@ -27,6 +27,11 @@
  *         +------+------+------+------+------+------+------+------+
  *  PORTB  |      |      |      |      |      | \RD  | \WR  | \CS  |
  *         +------+------+------+------+------+------+------+------+
+ *
+ * FUSE bytes:
+ *    lfuse 0xe2 (internal RC clock @ 8 MHz)
+ *    hfuse 0xdf (default)
+ *    efuse 0x01 (default)
  */
 
 #include <avr/io.h>
@@ -35,19 +40,20 @@
 #include "lcd_hardware.h"
 
 /* -------- Serial Port ------------- */
-
 inline unsigned char
 get_char(){
 	while(!(UCSR0A & _BV(RXC0))); /* receive complete */
 	return UDR0; /* read from serial port */
 }
 
-inline void put_char(unsigned char c){
+inline void
+put_char(unsigned char c){
 	while(!(UCSR0A & _BV(UDRE0)));
 	UDR0 = c;
 }
 
-void print_hex(unsigned char x){
+void
+print_hex(unsigned char x){
 	unsigned char n;
 
 	put_char('0');
@@ -97,11 +103,19 @@ get_hex(uint8_t *val){
 
 
 /*
- * protocol on serial port:
- *     ASCII char is just written to memory (CMD_DATA_WRITE_INC)
- *     0x01 c  : write arbitrary char c (idle --(0x01)--> write_data --(c)--> idle)
- *     0x02    : read arbitrary char c
- *     0x03
+ * Protocol on serial port:
+ *    <0x20 .. 0xff> -> write char - 0x20 to LCD memory
+ * 			(convert ASCII to LCD charset)
+ *    ^A/0x01 byte   -> write byte to LCD memory, literally
+ *    ^B/0x02 byte   -> echo byte back to serial port
+ *    ^C/0x03 lo hi  -> set address pointer (for mem read/write) to addr
+ *    ^D/0x04        -> write status byte to serial port
+ *    ^E/0x05        -> execute lcd hardware init
+ *    ^F/0x06 byte   -> set graphic/text combination mode (see hardware.h)
+ *    ^G/0x07 byte   -> set display mode (text, cursor, blink, gfx. on/off)
+ *    ^H/0x08 byte   -> set cursor width (0..7 -> 1..8 lines)
+ *    ^I/0x09 count bytes... -> bulk transfer count bytes (count=0: 256 byte)
+ *    ^J/0x0a x y    -> set cursor to x,y
  */
 
 #define CHAR_NOP     0x00
@@ -113,9 +127,8 @@ get_hex(uint8_t *val){
 #define CHAR_MODE    0x06	// ^F
 #define CHAR_DISP    0x07	// ^G
 #define CHAR_CURSOR  0x08	// ^H
-
-uint8_t serport_data_1; /* memorize */
-uint8_t serport_data_2; /* memorize */
+#define CHAR_BULK    0x09       // ^I
+#define CHAR_POS_CURSOR 0x10    // ^J
 
 enum serport_state {
 	serport_idle,
@@ -125,13 +138,19 @@ enum serport_state {
 	serport_set_addr_hi,
 	serport_mode,
 	serport_disp,
-	serport_cursor
+	serport_cursor,
+	serport_bulk_count,
+	serport_bulk_data,
+	serport_pos_cursor_x,
+	serport_pos_cursor_y
 };
 uint8_t global_serport_state;
+uint8_t global_serport_data; /* memorize stuff for serial protocol */
 
 static void
 eat_char(uint8_t c){
 	uint8_t serport_state = global_serport_state;
+	uint8_t serport_data  = global_serport_data;
 	switch(serport_state){
 
 	case serport_echo:
@@ -144,12 +163,12 @@ eat_char(uint8_t c){
 		goto become_idle;
 
 	case serport_set_addr_lo:
-		serport_data_1 = c;
+		serport_data = c;
 		serport_state = serport_set_addr_hi;
 		break;
 
 	case serport_set_addr_hi:
-		lcd_command_long(CMD_ADDRESS_POINTER,serport_data_1 | (c<<8));
+		lcd_command_2(CMD_ADDRESS_POINTER,serport_data,c);
 		goto become_idle;
 
 	case serport_mode:
@@ -170,8 +189,31 @@ eat_char(uint8_t c){
 		lcd_command(c);
 		goto become_idle;
 
+	case serport_bulk_count:
+		serport_data = c;
+		serport_state = serport_bulk_data;
+		break;
+
+	case serport_bulk_data:
+		serport_data--;
+		lcd_data(c);
+		if(serport_data == 0){
+			lcd_command(CMD_AUTO_RESET);
+			goto become_idle;
+		}
+		break; /* stay in serport_bulk_data state */
+
+	case serport_pos_cursor_x:
+		serport_data = c;
+		serport_state = serport_pos_cursor_y;
+		break;
+
+	case serport_pos_cursor_y:
+		lcd_command_2(CMD_CURSOR_POS,serport_data,c);
+		goto become_idle;
+
 	default: /* =idle */
-		if(c>0x20){ /* write text char -> add 0x20 to match ASCII */
+		if(c>=0x20){ /* write text char -> add 0x20 to match ASCII */
 			lcd_command_1(CMD_DATA_WRITE_INC,c-0x20);
 			break;
 		}
@@ -201,6 +243,12 @@ eat_char(uint8_t c){
 		case CHAR_CURSOR:
 			serport_state = serport_cursor;
 			break;
+		case CHAR_BULK:
+			lcd_command(CMD_AUTO_WRITE);
+			serport_state = serport_bulk_count;
+			break;
+		case CHAR_POS_CURSOR:
+			serport_state = serport_pos_cursor_x;
 		}
 		break;
 	}
@@ -210,7 +258,7 @@ become_idle:
 	serport_state = serport_idle;
 serport_out:
 	global_serport_state = serport_state;
-
+	global_serport_data  = serport_data;
 }
 
 int main(){
@@ -220,9 +268,10 @@ int main(){
 	DDRB= PORTB_RD | PORTB_WR | PORTB_CS;  /* RD, WR, CS is AVR output */
 
 	/* setup serial port */
+	UCSR0A = _BV(U2X0); /* double uart clock */
 	UCSR0B = /*_BV(RXCIE0) |*/ _BV(RXEN0) | _BV(TXEN0);
 	UCSR0C = _BV(UCSZ01) | _BV(UCSZ00); /* 8 bit */
-	UBRR0 = 6; /* 1 MHz, 9600 bps */
+	UBRR0 = 8; /* 8 MHz, 115200 bps U2X0=1*/
 
 	lcd_hardware_init();
 

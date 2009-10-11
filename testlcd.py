@@ -35,16 +35,30 @@ import serial
 import sys
 import time
 
-S = serial.Serial('/dev/ttyUSB0',9600)
+S = serial.Serial('/dev/ttyUSB0',115200)
 S.write(chr(0x05)) # reset
-time.sleep(2.0)    # wait for reset to complete
-S.write(chr(0x07)+chr(0x08)) # display to graphics mode
+time.sleep(0.5)    # wait for reset to complete
+S.write(chr(0x07)+chr(0x0f)) # display to graphics+text+cursor+blink mode
+S.write(chr(0x06)+chr(0x01)) # text+graphics XOR mode
 S.write(chr(0x03)+chr(0x40)+chr(0x01)) # set write pointer to 0x0140
 
-for y in range(64) :
+for y in range(60) :
+	lcddata = ''
 	for x in range(0,240,6) :
 		d = 0
 		for c in range(6) :
 			if data[x+y*240+c] == '0' :
 				d |= 1<<(5-c)
-		S.write(chr(0x01)+chr(d)) # write char
+		lcddata = lcddata + chr(d)
+		#S.write(chr(0x01)+chr(d)) # write char
+#	print 'Bulk xfer of %d bytes.'%(len(lcddata))
+	S.write(chr(0x09)+chr(len(lcddata))+lcddata) # bulk transfer
+
+S.write(chr(0x03)+chr(0)+chr(0x00)) # set write offset
+S.write('Hello.')
+
+S.write(chr(0x10)+chr(27)+chr(2)) # cursor pos 27:2
+# write at x=10,y=2 -> offs = 2*40+17 = 97
+S.write(chr(0x03)+chr(97)+chr(0x00)) # set write offset
+S.write('Text_Layer.')
+

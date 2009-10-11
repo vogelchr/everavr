@@ -17,9 +17,9 @@
 #define STATUS_ERROR		0x40
 #define STATUS_BLINK		0x80
 
-#define CMD_CURSOR_POS		0x21
-#define CMD_OFFSET_REGISTER	0x22
-#define CMD_ADDRESS_POINTER	0x24
+#define CMD_CURSOR_POS		0x21 /* cursor position x,y */
+#define CMD_OFFSET_REGISTER	0x22 /* Ext. CG RAM offset a15..a11 */
+#define CMD_ADDRESS_POINTER	0x24 /* pointer in ext. ram for r/w */
 
 #define CMD_TEXT_HOME_ADDR	0x40
 #define CMD_TEXT_AREA		0x41
@@ -60,7 +60,12 @@
 #define CMD_SCREEN_PEEK		0xe0
 #define CMD_SCREEN_COPY		0xe8
 
-#define EXT_RAM_SIZE		0x2000
+#define LCD_TEXT_BASE		0x0000  /* 0x0000 -> 0x013f */
+#define LCD_GRAPHIC_BASE	0x0140  /* 0x0140 -> 0x0b3f */
+	/* Character Generator: a10..a3 -> character a2..a0 -> line */
+	/* so only a15..a11 can be choosen in ext. ram: mask 0xf800 */
+#define LCD_CGRAM_BASE		0x1800  /* 0x1800 -> 0x1fff */
+#define LCD_RAM_SIZE		0x2000
 
 
 /* write data to data register (iscmd=0) or command register (iscmd=1) */

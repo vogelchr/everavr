@@ -1,6 +1,8 @@
 #include "lcd_hardware.h"
 #include <avr/io.h>
 
+/* raw hardware access function, write data or command register
+   depending on iscmd=1 (command) or =0 (data) */
 void
 lcd_write(uint8_t data,uint8_t iscmd){
 	/* set output pins */
@@ -28,9 +30,10 @@ lcd_write(uint8_t data,uint8_t iscmd){
 	DDRC = 0; /* disable drivers on 0..5 */
 	DDRD &= ~_BV(7); /* disable drivers on D6, D7, C/\D */
 	DDRD &= ~_BV(6); 
-
 }
 
+/* raw hardware access function, read data or status register
+   (depending on isstat=1 (status) or =0 (data) */
 uint8_t
 lcd_read(uint8_t isstat){
 	unsigned char ret;
@@ -49,7 +52,9 @@ lcd_read(uint8_t isstat){
 	return ret;
 }
 
-/* these check the status register if chip is ready! */
+/* write command to controller, check if it's ok to do so in status
+   register first. Poll status register 256 times before giving up.
+   Return 0 on success, 1 if status register never went ok */
 uint8_t
 lcd_command(uint8_t cmd){
 	register uint8_t i=0;
@@ -64,6 +69,7 @@ lcd_command(uint8_t cmd){
 	return 0;
 }
 
+/* write data to controller, remarks for lcd_command above apply, too */
 uint8_t
 lcd_data(uint8_t data){
 	register uint8_t i=0;
@@ -74,11 +80,11 @@ lcd_data(uint8_t data){
 	} while(i!=0);
 	if(i==0)
 		return 1; // error
-
 	lcd_write(data,0); /* write command */
 	return 0;
 }
 
+/* read data from controller, remarks for lcd_command above apply, too */
 uint8_t
 lcd_get_data(uint8_t *data){
 	register uint8_t i=0;
@@ -94,6 +100,7 @@ lcd_get_data(uint8_t *data){
 	return 0;	
 }
 
+/* write one data byte, then post one command */
 uint8_t
 lcd_command_1(uint8_t cmd,uint8_t data){
 	if(lcd_data(data))
@@ -101,6 +108,7 @@ lcd_command_1(uint8_t cmd,uint8_t data){
 	return lcd_command(cmd);
 }
 
+/* write two data bytes, then post one command */
 uint8_t
 lcd_command_2(uint8_t cmd,uint8_t data1,uint8_t data2){
 	if(lcd_data(data1))
@@ -110,6 +118,7 @@ lcd_command_2(uint8_t cmd,uint8_t data1,uint8_t data2){
 	return lcd_command(cmd);
 }
 
+/* write two data bytes, as low/high half of 16bit-data, then post command */
 uint8_t
 lcd_command_long(uint8_t cmd,uint16_t data){
 	if(lcd_data(data & 0xff)) // LSB
@@ -119,6 +128,7 @@ lcd_command_long(uint8_t cmd,uint16_t data){
 	return lcd_command(cmd);
 }
 
+/* post command, then read data */
 uint8_t
 lcd_command_read(uint8_t cmd,uint8_t *data){
 	if(lcd_command(cmd))
@@ -126,6 +136,7 @@ lcd_command_read(uint8_t cmd,uint8_t *data){
 	return lcd_get_data(data);
 }
 
+/* write in auto-mode, check status byte first */
 static unsigned int
 lcd_auto_write(unsigned char data){
 	register unsigned int i=0;
@@ -141,6 +152,7 @@ lcd_auto_write(unsigned char data){
 	return 0;
 }
 
+/* read in auto-mode, check status byte first. */
 static unsigned int
 lcd_auto_read(unsigned char *data){
 	register unsigned int i=0;
@@ -156,7 +168,6 @@ lcd_auto_read(unsigned char *data){
 	return 0;
 }
 
-
 void
 lcd_hardware_init(){
 	register uint16_t w;
@@ -168,45 +179,38 @@ lcd_hardware_init(){
 		CMD_DISP_CURSOR_BLINK | CMD_DISP_TEXT | CMD_DISP_GRAPHICS);
 	lcd_command(CMD_CURSOR_PATTERN|CMD_CURSOR_N_LINES(4));
 
+	lcd_command_2(CMD_CURSOR_POS,0,0); /* cursor to upper left */
+	lcd_command_long(CMD_OFFSET_REGISTER,0x0000); /* ext. char gen */
 
-	lcd_command_2(CMD_CURSOR_POS,0,0);
-	lcd_command_long(CMD_OFFSET_REGISTER,0x0000);
-
-	lcd_command_long(CMD_TEXT_HOME_ADDR,0x0000);
 	lcd_command_long(CMD_TEXT_AREA,40); /* 40 columns */
 	/* 40col x 8 line = 320 = 0x140 chars, roud up to 0x200 */
-	lcd_command_long(CMD_GRAPHIC_HOME_ADDR,0x140);
 	lcd_command_long(CMD_GRAPHIC_AREA,0x28);
 	/* 240 pixels/8 bits_per_pixel=30 byte/line */
 	/* 240x64px / 6bit = 2560 byte = 0xa00 */
+
+	lcd_command_long(CMD_TEXT_HOME_ADDR,LCD_TEXT_BASE);
+	lcd_command_long(CMD_GRAPHIC_HOME_ADDR,LCD_GRAPHIC_BASE);
+	lcd_command_2(CMD_OFFSET_REGISTER,(LCD_CGRAM_BASE >> 11),0);
 
 	/* *TEXT*
 	   0 : 0x0000 : start of first line
 	   1 : 0x0028 : start of 2nd line
 	     ...
 	   7 : 0x0118 : start of 8th line  ... 0x013f end of 8th line
-
 	   *GRAPHICS*
 		 0 0x0140 ..0x0167 line 1
 		 1 0x0168 ..0x018f line 2
 		 2 0x0190 ..0x01b7 line 3
 		63 0x0b18 ..0x0b3f line 64
+	   *GFX gen area*
+		starts at 0x0b40 .. ends at 0x1fff
 	*/
 
+	/* clear whole memory with zeroes */
 	lcd_command_long(CMD_ADDRESS_POINTER,0x0000);
 	lcd_command(CMD_AUTO_WRITE);
-	for(w=0;w<EXT_RAM_SIZE;w++)
-		lcd_auto_write(w%128);
-	lcd_command(CMD_AUTO_RESET);
-
-	lcd_command_long(CMD_ADDRESS_POINTER,0x0000);
-	lcd_command(CMD_AUTO_WRITE);
-	for(w=0;w<EXT_RAM_SIZE;w++)
+	for(w=0;w<LCD_RAM_SIZE;w++)
 		lcd_auto_write(0);
-	lcd_command(CMD_AUTO_RESET);
-
-	lcd_command_2(CMD_CURSOR_POS,0,0); /* cursor on upper left */
-
-	
+	lcd_command(CMD_AUTO_RESET); /* should overflow */
 }
 
