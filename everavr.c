@@ -36,7 +36,7 @@
  *         +------+------+------+------+------+------+------+------+
  *
  * FUSE bytes:
- *    lfuse 0xe2 (internal RC clock @ 8 MHz)
+ *    lfuse 0xdf (ext. 18 MHz Crystal)
  *    hfuse 0xdf (default)
  *    efuse 0x01 (default)
  */
@@ -358,7 +358,7 @@ int main(){
 	UCSR0A = _BV(U2X0); /* double uart clock */
 	UCSR0B = /*_BV(RXCIE0) |*/ _BV(RXEN0) | _BV(TXEN0);
 	UCSR0C = _BV(UCSZ01) | _BV(UCSZ00); /* 8 bit */
-	UBRR0 = 8; /* 8 MHz, 115200 bps U2X0=1*/
+	UBRR0 = 155; /* 18 MHz / 156 = 115384 bps = 115k2 + 0.16% */
 
 	sei();
 	usbInit();
