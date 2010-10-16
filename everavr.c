@@ -45,18 +45,85 @@
 #include <avr/interrupt.h>
 
 #include "lcd_hardware.h"
+#include <usbdrv.h>
 
-/* -------- Serial Port ------------- */
-inline unsigned char
-get_char(){
-	while(!(UCSR0A & _BV(RXC0))); /* receive complete */
-	return UDR0; /* read from serial port */
+static void eat_char(uint8_t c); // used by USB code...
+
+/* ---------------------- USB ------------------------------- */
+
+PROGMEM char usbHidReportDescriptor[22] = {    /* USB report descriptor */
+    0x06, 0x00, 0xff,              // USAGE_PAGE (Generic Desktop)
+    0x09, 0x01,                    // USAGE (Vendor Usage 1)
+    0xa1, 0x01,                    // COLLECTION (Application)
+    0x15, 0x00,                    //   LOGICAL_MINIMUM (0)
+    0x26, 0xff, 0x00,              //   LOGICAL_MAXIMUM (255)
+    0x75, 0x08,                    //   REPORT_SIZE (8)
+    0x95, 0x80,                    //   REPORT_COUNT (128)
+    0x09, 0x00,                    //   USAGE (Undefined)
+    0xb2, 0x02, 0x01,              //   FEATURE (Data,Var,Abs,Buf)
+    0xc0                           // END_COLLECTION
+};
+
+/* usbFunctionRead() is called when the host requests a chunk of data from
+ * the device. For more information see the documentation in usbdrv/usbdrv.h.
+ */
+uchar
+usbFunctionRead(uchar *data, uchar len){
+	return 1;
 }
 
-inline void
+/* usbFunctionWrite() is called when the host sends a chunk of data to the
+ * device. For more information see the documentation in usbdrv/usbdrv.h.
+ */
+uchar
+usbFunctionWrite(uchar *data, uchar len){
+ 	int i;
+
+	for(i=0;i<len;i++)
+		eat_char(data[i]);
+	return 1;
+}
+
+usbMsgLen_t
+usbFunctionSetup(uchar data[8]){
+	usbRequest_t    *rq = (void *)data;
+
+	if((rq->bmRequestType & USBRQ_TYPE_MASK) == USBRQ_TYPE_CLASS){
+		/* HID class request */
+		if(rq->bRequest == USBRQ_HID_GET_REPORT){
+			/* wValue: ReportType (highbyte), ReportID (lowbyte) */
+			/* since we have only one report type, we can ignore
+			   the report-ID */
+			/* use usbFunctionRead() to obtain data */
+			return USB_NO_MSG;
+		} else if(rq->bRequest == USBRQ_HID_SET_REPORT){
+			/* since we have only one report type, we can
+			   ignore the report-ID */
+			/* use usbFunctionWrite() to receive data from host */
+			return USB_NO_MSG;
+		}
+	}else{
+		/* ignore vendor type requests, we don't use any */
+	}
+	return 0;
+}
+
+/* -------- Serial Port ------------- */
+inline int
+get_char(unsigned char *c){
+	if(!(UCSR0A & _BV(RXC0))){
+		return -1; // nothing in input buffer!
+	}
+	*c=UDR0; /* read from serial port */
+	return 0;
+}
+
+inline int
 put_char(unsigned char c){
-	while(!(UCSR0A & _BV(UDRE0)));
+	if(!(UCSR0A & _BV(UDRE0)))
+		return -1; // no space
 	UDR0 = c;
+	return 0;
 }
 
 void
@@ -77,6 +144,7 @@ print_hex(unsigned char x){
 	put_char(n);
 }
 
+#if 0
 /* get one hex character 0..9, a..f, A..F from serial port,
    put result (0..15) in *nib, return 0 on success, 1 on error */
 int
@@ -111,7 +179,7 @@ get_hex(uint8_t *val){
 	*val |= nib;
 	return 0;
 }
-
+#endif
 
 /*
  * Protocol on serial port:
@@ -273,6 +341,13 @@ serport_out:
 	global_serport_data  = serport_data;
 }
 
+
+/* ---------- initial data to show after powerup ---- */
+PROGMEM char initial_data[]={
+	'H','e','l','l','o',' ','W','o','r','l','d','!'
+};
+unsigned char initial_readptr=0;
+
 int main(){
 	/* init LCD pins */
 	DDRD= PORTD_CD | PORTD_RES; /* CD, RES is AVR output, default to 0 */
@@ -285,10 +360,21 @@ int main(){
 	UCSR0C = _BV(UCSZ01) | _BV(UCSZ00); /* 8 bit */
 	UBRR0 = 8; /* 8 MHz, 115200 bps U2X0=1*/
 
+	sei();
+	usbInit();
+	usbDeviceConnect();
+
 	lcd_hardware_init();
 
 	while(1){
-		unsigned char c = get_char(); /* from serial port */
-		eat_char(c);
+		unsigned char c;
+		if(initial_readptr < sizeof(initial_data)){
+			c = pgm_read_byte(initial_data + initial_readptr);
+			initial_readptr++;
+			eat_char(c);
+		}
+		if(get_char(&c)==0)
+			eat_char(c);
+		usbPoll();
 	}
 }

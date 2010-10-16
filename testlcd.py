@@ -35,12 +35,17 @@ import serial
 import sys
 import time
 
-S = serial.Serial('/dev/ttyUSB0',115200)
-S.write(chr(0x05)) # reset
+#S = serial.Serial('/dev/ttyUSB0',115200)
+
+f = open('/dev/hidraw3','w')
+f.write(chr(0x00)+chr(0x05)) # report-no 0 (ignored), 0x05 -> reset
 time.sleep(0.5)    # wait for reset to complete
-S.write(chr(0x07)+chr(0x0f)) # display to graphics+text+cursor+blink mode
-S.write(chr(0x06)+chr(0x01)) # text+graphics XOR mode
-S.write(chr(0x03)+chr(0x40)+chr(0x01)) # set write pointer to 0x0140
+
+buf=list()
+buf.append(chr(0x05)) # reset
+buf.append(chr(0x07)+chr(0x0f)) # display to graphics+text+cursor+blink mode
+buf.append(chr(0x06)+chr(0x01)) # text+graphics XOR mode
+buf.append(chr(0x03)+chr(0x40)+chr(0x01)) # set write pointer to 0x0140
 
 for y in range(60) :
 	lcddata = ''
@@ -50,15 +55,17 @@ for y in range(60) :
 			if data[x+y*240+c] == '0' :
 				d |= 1<<(5-c)
 		lcddata = lcddata + chr(d)
-		#S.write(chr(0x01)+chr(d)) # write char
+		#buf.append(chr(0x01)+chr(d)) # write char
 #	print 'Bulk xfer of %d bytes.'%(len(lcddata))
-	S.write(chr(0x09)+chr(len(lcddata))+lcddata) # bulk transfer
+	buf.append(chr(0x09)+chr(len(lcddata))+lcddata) # bulk transfer
 
-S.write(chr(0x03)+chr(0)+chr(0x00)) # set write offset
-S.write('Hello.')
+buf.append(chr(0x03)+chr(0)+chr(0x00)) # set write offset
+buf.append('Hello.')
 
-S.write(chr(0x10)+chr(27)+chr(2)) # cursor pos 27:2
-# write at x=10,y=2 -> offs = 2*40+17 = 97
-S.write(chr(0x03)+chr(97)+chr(0x00)) # set write offset
-S.write('Text_Layer.')
+buf.append(chr(0x10)+chr(27)+chr(2)) # cursor pos 27:2
+buf.append(chr(0x03)+chr(97)+chr(0x00)) # set write offset
+buf.append('Text_Layer.')
+
+for x in buf :
+	f.write(chr(0x00) + x)
 
